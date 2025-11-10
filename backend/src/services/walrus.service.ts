@@ -1,6 +1,10 @@
 import axios from 'axios';
 import crypto from 'crypto-js';
+import dotenv from 'dotenv';
 import { WalrusUploadResponse, SealEncryptionResult } from '../types';
+
+// Ensure environment variables from .env are loaded before using process.env
+dotenv.config();
 
 export class WalrusService {
   private publisherUrl: string;
@@ -8,9 +12,15 @@ export class WalrusService {
   private epochs: number;
 
   constructor() {
-    this.publisherUrl = process.env.WALRUS_PUBLISHER_URL || 'https://publisher.walrus-testnet.walrus.space';
-    this.aggregatorUrl = process.env.WALRUS_AGGREGATOR_URL || 'https://aggregator.walrus-testnet.walrus.space';
-    this.epochs = parseInt(process.env.WALRUS_EPOCHS || '5');
+    this.publisherUrl = process.env.WALRUS_PUBLISHER_URL || 'https://suiftly-testnet-pub.mhax.io';
+    this.aggregatorUrl = process.env.WALRUS_AGGREGATOR_URL || 'https://suiftly-testnet-agg.mhax.io';
+    this.epochs = parseInt(process.env.WALRUS_EPOCHS || '1');
+
+    console.log('[WalrusService] Config', {
+      publisherUrl: this.publisherUrl,
+      aggregatorUrl: this.aggregatorUrl,
+      epochs: this.epochs,
+    });
   }
 
   /**
@@ -37,9 +47,13 @@ export class WalrusService {
         });
       }
 
-      // Upload to Walrus
+      // Upload to Walrus (use current HTTP API path)
+      const uploadUrl = `${this.publisherUrl}/v1/blobs?epochs=${this.epochs}`;
+      const contentLength = typeof dataToUpload === 'string' ? Buffer.byteLength(dataToUpload, 'utf8') : 0;
+      console.log('[WalrusService] Upload start', { uploadUrl, epochs: this.epochs, encrypt, contentLength });
+
       const response = await axios.put(
-        `${this.publisherUrl}/v1/store?epochs=${this.epochs}`,
+        uploadUrl,
         dataToUpload,
         {
           headers: {
@@ -49,19 +63,40 @@ export class WalrusService {
       );
 
       // Extract blob ID from response
-      let blobId: string;
-      if (response.data.newlyCreated) {
-        blobId = response.data.newlyCreated.blobObject.blobId;
-      } else if (response.data.alreadyCertified) {
-        blobId = response.data.alreadyCertified.blobId;
-      } else {
+      let blobId: string | undefined;
+      const dataKeys = response && response.data ? Object.keys(response.data) : [];
+      console.log('[WalrusService] Upload response', { status: response.status, dataKeys });
+
+      // Support multiple response shapes across Walrus versions
+      try {
+        if (response.data?.blobStoreResult?.newlyCreated?.blobObject?.id) {
+          blobId = response.data.blobStoreResult.newlyCreated.blobObject.id;
+        } else if (response.data?.blobStoreResult?.alreadyCertified?.blobId) {
+          blobId = response.data.blobStoreResult.alreadyCertified.blobId;
+        } else if (response.data?.newlyCreated?.blobObject?.blobId) {
+          blobId = response.data.newlyCreated.blobObject.blobId;
+        } else if (response.data?.newlyCreated?.blobObject?.id) {
+          blobId = response.data.newlyCreated.blobObject.id;
+        } else if (response.data?.alreadyCertified?.blobId) {
+          blobId = response.data.alreadyCertified.blobId;
+        } else if (response.data?.blobId) {
+          blobId = response.data.blobId;
+        }
+      } catch (parseErr) {
+        console.warn('[WalrusService] Unexpected Walrus response shape', parseErr);
+      }
+
+      if (!blobId) {
+        console.error('[WalrusService] Failed to parse Walrus upload response', response.data);
         throw new Error('Failed to get blob ID from Walrus response');
       }
 
       console.log(`Data uploaded to Walrus with blob ID: ${blobId}`);
       return blobId;
     } catch (error: any) {
-      console.error('Error uploading to Walrus:', error.message);
+      const status = error?.response?.status;
+      const respData = error?.response?.data;
+      console.error('Error uploading to Walrus:', error.message, { status, respData });
       throw new Error(`Walrus upload failed: ${error.message}`);
     }
   }
@@ -71,12 +106,9 @@ export class WalrusService {
    */
   async retrieveData(blobId: string, decryptionKey?: string): Promise<any> {
     try {
-      const response = await axios.get(
-        `${this.aggregatorUrl}/v1/${blobId}`,
-        {
-          responseType: 'text',
-        }
-      );
+      const url = `${this.aggregatorUrl}/v1/blobs/${blobId}`;
+      console.log('[WalrusService] Retrieve start', { url });
+      const response = await axios.get(url, { responseType: 'text' });
 
       let data = response.data;
 
@@ -96,7 +128,8 @@ export class WalrusService {
         return data;
       }
     } catch (error: any) {
-      console.error('Error retrieving from Walrus:', error.message);
+      const status = error?.response?.status;
+      console.error('Error retrieving from Walrus:', error.message, { status });
       throw new Error(`Walrus retrieval failed: ${error.message}`);
     }
   }
@@ -191,7 +224,7 @@ export class WalrusService {
    */
   async blobExists(blobId: string): Promise<boolean> {
     try {
-      await axios.head(`${this.aggregatorUrl}/v1/${blobId}`);
+      await axios.head(`${this.aggregatorUrl}/v1/blobs/${blobId}`);
       return true;
     } catch (error) {
       return false;
@@ -203,14 +236,9 @@ export class WalrusService {
    */
   async getBlobInfo(blobId: string): Promise<any> {
     try {
-      const response = await axios.get(
-        `${this.aggregatorUrl}/v1/${blobId}`,
-        {
-          headers: {
-            'Accept': 'application/json',
-          },
-        }
-      );
+      const response = await axios.get(`${this.aggregatorUrl}/v1/blobs/${blobId}`, {
+        headers: { 'Accept': 'application/json' },
+      });
       return response.data;
     } catch (error: any) {
       console.error('Error getting blob info:', error.message);

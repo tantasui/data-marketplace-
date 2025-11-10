@@ -93,6 +93,18 @@ router.get('/:id', async (req: Request, res: Response) => {
  */
 router.post('/', async (req: Request, res: Response) => {
   try {
+    console.log('[FeedsRoute] CreateFeed request received');
+    console.log('[FeedsRoute] Body summary', {
+      provider: req.body?.provider,
+      name: req.body?.name,
+      category: req.body?.category,
+      location: req.body?.location,
+      pricePerQuery: req.body?.pricePerQuery,
+      monthlySubscriptionPrice: req.body?.monthlySubscriptionPrice,
+      isPremium: req.body?.isPremium,
+      updateFrequency: req.body?.updateFrequency,
+      initialDataType: typeof req.body?.initialData,
+    });
     const {
       provider,
       name,
@@ -117,6 +129,7 @@ router.post('/', async (req: Request, res: Response) => {
     // Upload initial data to Walrus
     const encrypt = isPremium === true;
     const walrusBlobId = await walrusService.uploadData(initialData, encrypt);
+    console.log('[FeedsRoute] Walrus upload completed', { walrusBlobId });
 
     // Create metadata
     const metadata: DataFeedMetadata = {
@@ -136,6 +149,7 @@ router.post('/', async (req: Request, res: Response) => {
       metadata,
       walrusBlobId
     );
+    console.log('[FeedsRoute] Sui register feed completed', { feedId });
 
     res.json({
       success: true,
@@ -145,10 +159,16 @@ router.post('/', async (req: Request, res: Response) => {
       }
     });
   } catch (error: any) {
-    console.error('Error creating feed:', error);
+    const status = error?.response?.status;
+    const respData = error?.response?.data;
+    console.error('Error creating feed:', error?.message || error, { status, respData });
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
+      details: {
+        status,
+        respData,
+      }
     });
   }
 });

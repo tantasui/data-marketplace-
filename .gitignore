@@ -56,3 +56,5 @@ deployed-objects.json
 *.key
 *.pem
 private_key_*
+example 
+iot_marketplace/build/*

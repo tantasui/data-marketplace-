@@ -1,8 +1,13 @@
 import { SuiClient, getFullnodeUrl } from '@mysten/sui.js/client';
 import { TransactionBlock } from '@mysten/sui.js/transactions';
 import { Ed25519Keypair } from '@mysten/sui.js/keypairs/ed25519';
-import { fromHEX } from '@mysten/sui.js/utils';
+import { fromHEX } from '@mysten/sui/utils';
 import { DataFeedMetadata, DataFeed, Subscription } from '../types';
+import { decodeSuiPrivateKey } from '@mysten/sui/cryptography';
+import dotenv from 'dotenv';
+
+// Ensure environment variables are loaded before using process.env
+dotenv.config();
 
 export class SuiService {
   private client: SuiClient;
@@ -11,18 +16,36 @@ export class SuiService {
 
   constructor() {
     const network = process.env.SUI_NETWORK || 'testnet';
-    this.client = new SuiClient({ url: getFullnodeUrl(network as any) });
+    const fullnodeUrl = process.env.SUI_FULLNODE_URL || getFullnodeUrl(network as any);
+    this.client = new SuiClient({ url: fullnodeUrl });
     this.packageId = process.env.SUI_PACKAGE_ID || '';
 
     // Initialize keypair if private key is provided
     if (process.env.SUI_PRIVATE_KEY) {
       try {
-        const privateKeyBytes = fromHEX(process.env.SUI_PRIVATE_KEY);
-        this.keypair = Ed25519Keypair.fromSecretKey(privateKeyBytes);
+        // Support Bech32 encoded keys (suiprivkey1...) and raw hex
+        const maybeKey = process.env.SUI_PRIVATE_KEY.trim();
+        if (maybeKey.startsWith('suiprivkey1')) {
+          const decoded = decodeSuiPrivateKey(maybeKey);
+          this.keypair = Ed25519Keypair.fromSecretKey(decoded.secretKey);
+          console.log('[SuiService] Loaded private key from Bech32 suiprivkey string');
+        } else {
+          const privateKeyBytes = fromHEX(maybeKey);
+          this.keypair = Ed25519Keypair.fromSecretKey(privateKeyBytes);
+        }
       } catch (error) {
         console.warn('Invalid SUI_PRIVATE_KEY provided');
       }
     }
+
+    console.log('[SuiService] Config', {
+      network,
+      fullnodeUrl,
+      packageIdSet: !!this.packageId,
+      registrySet: !!process.env.SUI_REGISTRY_ID,
+      treasurySet: !!process.env.SUI_TREASURY_ID,
+      keypairLoaded: !!this.keypair,
+    });
   }
 
   /**
@@ -45,7 +68,10 @@ export class SuiService {
   ): Promise<string> {
     try {
       if (!this.keypair) {
-        throw new Error('Keypair not initialized');
+        throw new Error('Keypair not initialized. Ensure SUI_PRIVATE_KEY is set.');
+      }
+      if (!this.packageId) {
+        throw new Error('SUI_PACKAGE_ID not configured. Set it in environment.');
       }
 
       const tx = new TransactionBlock();
@@ -175,6 +201,7 @@ export class SuiService {
         options: {
           showEffects: true,
           showObjectChanges: true,
+          showEvents: true,
         },
       });
 
@@ -190,6 +217,20 @@ export class SuiService {
         if (subscriptionObject && 'objectId' in subscriptionObject) {
           console.log(`Subscription created: ${subscriptionObject.objectId}`);
           return subscriptionObject.objectId;
+        }
+      }
+
+      // Fallback: try to extract from emitted events
+      const events = (result as any).events || [];
+      for (const ev of events) {
+        const evType: string | undefined = ev?.type;
+        const parsed = ev?.parsedJson;
+        if (evType && evType.includes('SubscriptionCreated') && parsed && 'subscription_id' in parsed) {
+          const subId = (parsed as any).subscription_id;
+          if (typeof subId === 'string' && subId.length > 0) {
+            console.log(`Subscription created via event: ${subId}`);
+            return subId;
+          }
         }
       }
 
@@ -216,11 +257,16 @@ export class SuiService {
       }
 
       // Check if consumer matches and subscription is active
-      return (
-        subscription.consumer === consumer &&
-        subscription.isActive &&
-        Date.now() < subscription.expiryEpoch * 1000
-      );
+      if (subscription.consumer !== consumer || !subscription.isActive) {
+        return false;
+      }
+
+      // Get current Sui epoch and compare with expiry epoch
+      // Epochs are Sui epochs, not Unix timestamps
+      const latestSuiSystemState = await this.client.getLatestSuiSystemState();
+      const currentEpoch = parseInt(latestSuiSystemState.epoch);
+
+      return currentEpoch <= subscription.expiryEpoch;
     } catch (error: any) {
       console.error('Error checking access:', error.message);
       return false;
@@ -231,107 +277,146 @@ export class SuiService {
    * Get data feed details
    */
   async getDataFeed(feedId: string): Promise<DataFeed | null> {
-    try {
-      const object = await this.client.getObject({
-        id: feedId,
-        options: {
-          showContent: true,
-        },
-      });
+    const maxRetries = parseInt(process.env.SUI_OBJECT_RETRY || '2');
+    const delayMs = parseInt(process.env.SUI_OBJECT_RETRY_DELAY_MS || '600');
 
-      if (object.data && object.data.content && 'fields' in object.data.content) {
-        const fields = object.data.content.fields as any;
-
-        return {
+    for (let attempt = 1; attempt <= (maxRetries + 1); attempt++) {
+      try {
+        const object = await this.client.getObject({
           id: feedId,
-          provider: fields.provider,
-          name: fields.name,
-          category: fields.category,
-          description: fields.description,
-          location: fields.location,
-          pricePerQuery: parseInt(fields.price_per_query),
-          monthlySubscriptionPrice: parseInt(fields.monthly_subscription_price),
-          isPremium: fields.is_premium,
-          walrusBlobId: fields.walrus_blob_id,
-          createdAt: parseInt(fields.created_at),
-          lastUpdated: parseInt(fields.last_updated),
-          isActive: fields.is_active,
-          updateFrequency: parseInt(fields.update_frequency),
-          totalSubscribers: parseInt(fields.total_subscribers),
-          totalRevenue: parseInt(fields.total_revenue),
-        };
-      }
+          options: {
+            showContent: true,
+          },
+        });
 
-      return null;
-    } catch (error: any) {
-      console.error('Error getting data feed:', error.message);
-      return null;
+        if (object.data && object.data.content && 'fields' in object.data.content) {
+          const fields = object.data.content.fields as any;
+
+          return {
+            id: feedId,
+            provider: fields.provider,
+            name: fields.name,
+            category: fields.category,
+            description: fields.description,
+            location: fields.location,
+            pricePerQuery: parseInt(fields.price_per_query),
+            monthlySubscriptionPrice: parseInt(fields.monthly_subscription_price),
+            isPremium: fields.is_premium,
+            walrusBlobId: fields.walrus_blob_id,
+            createdAt: parseInt(fields.created_at),
+            lastUpdated: parseInt(fields.last_updated),
+            isActive: fields.is_active,
+            updateFrequency: parseInt(fields.update_frequency),
+            totalSubscribers: parseInt(fields.total_subscribers),
+            totalRevenue: parseInt(fields.total_revenue),
+          };
+        }
+
+        // Not found / unexpected shape
+        return null;
+      } catch (error: any) {
+        const msg = error?.message || String(error);
+        console.error(`[SuiService] getDataFeed(${feedId}) attempt ${attempt} failed:`, msg);
+        if (attempt <= maxRetries) {
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+          continue;
+        }
+        return null;
+      }
     }
+
+    // Fallback to satisfy return type
+    return null;
   }
 
   /**
    * Get subscription details
    */
   async getSubscription(subscriptionId: string): Promise<Subscription | null> {
-    try {
-      const object = await this.client.getObject({
-        id: subscriptionId,
-        options: {
-          showContent: true,
-        },
-      });
+    const maxRetries = parseInt(process.env.SUI_OBJECT_RETRY || '2');
+    const delayMs = parseInt(process.env.SUI_OBJECT_RETRY_DELAY_MS || '600');
 
-      if (object.data && object.data.content && 'fields' in object.data.content) {
-        const fields = object.data.content.fields as any;
-
-        return {
+    for (let attempt = 1; attempt <= (maxRetries + 1); attempt++) {
+      try {
+        const object = await this.client.getObject({
           id: subscriptionId,
-          consumer: fields.consumer,
-          feedId: fields.feed_id,
-          tier: parseInt(fields.tier),
-          startEpoch: parseInt(fields.start_epoch),
-          expiryEpoch: parseInt(fields.expiry_epoch),
-          paymentAmount: parseInt(fields.payment_amount),
-          queriesUsed: parseInt(fields.queries_used),
-          isActive: fields.is_active,
-        };
-      }
+          options: {
+            showContent: true,
+          },
+        });
 
-      return null;
-    } catch (error: any) {
-      console.error('Error getting subscription:', error.message);
-      return null;
+        if (object.data && object.data.content && 'fields' in object.data.content) {
+          const fields = object.data.content.fields as any;
+
+          return {
+            id: subscriptionId,
+            consumer: fields.consumer,
+            feedId: fields.feed_id,
+            tier: parseInt(fields.tier),
+            startEpoch: parseInt(fields.start_epoch),
+            expiryEpoch: parseInt(fields.expiry_epoch),
+            paymentAmount: parseInt(fields.payment_amount),
+            queriesUsed: parseInt(fields.queries_used),
+            isActive: fields.is_active,
+          };
+        }
+
+        return null;
+      } catch (error: any) {
+        const msg = error?.message || String(error);
+        console.error(`[SuiService] getSubscription(${subscriptionId}) attempt ${attempt} failed:`, msg);
+        if (attempt <= maxRetries) {
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+          continue;
+        }
+        return null;
+      }
     }
+
+    return null;
   }
 
   /**
    * Get all data feeds (paginated)
    */
   async getAllDataFeeds(limit: number = 50): Promise<DataFeed[]> {
-    try {
-      // Query for all DataFeed objects
-      const response = await this.client.queryEvents({
-        query: { MoveEventType: `${this.packageId}::data_marketplace::FeedRegistered` },
-        limit,
-      });
+    const maxRetries = parseInt(process.env.SUI_EVENTS_RETRY || '2');
+    const delayMs = parseInt(process.env.SUI_EVENTS_RETRY_DELAY_MS || '600');
 
-      const feeds: DataFeed[] = [];
+    for (let attempt = 1; attempt <= (maxRetries + 1); attempt++) {
+      try {
+        // Query for all DataFeed registration events
+        const response = await this.client.queryEvents({
+          query: { MoveEventType: `${this.packageId}::data_marketplace::FeedRegistered` },
+          limit,
+        });
 
-      for (const event of response.data) {
-        if (event.parsedJson) {
-          const feedId = (event.parsedJson as any).feed_id;
-          const feed = await this.getDataFeed(feedId);
-          if (feed) {
-            feeds.push(feed);
+        const feeds: DataFeed[] = [];
+
+        for (const event of response.data) {
+          if (event.parsedJson) {
+            const feedId = (event.parsedJson as any).feed_id;
+            const feed = await this.getDataFeed(feedId);
+            if (feed) {
+              feeds.push(feed);
+            }
           }
         }
-      }
 
-      return feeds;
-    } catch (error: any) {
-      console.error('Error getting all feeds:', error.message);
-      return [];
+        return feeds;
+      } catch (error: any) {
+        const msg = error?.message || String(error);
+        console.error(`[SuiService] getAllDataFeeds attempt ${attempt} failed:`, msg);
+        if (attempt <= maxRetries) {
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+          continue;
+        }
+        return [];
+      }
     }
+
+    // Fallback to satisfy the return type in case control reaches here
+    return [];
   }
 
   /**

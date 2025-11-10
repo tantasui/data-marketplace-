@@ -1,4 +1,17 @@
 import axios, { AxiosInstance } from 'axios';
+import {
+  FeedsListResponse,
+  FeedResponse,
+  CreateFeedResponse,
+  UpdateFeedDataResponse,
+  SubscribeResponse,
+  SubscriptionResponse,
+  VerifyAccessResponse,
+  DataResponse,
+  DataHistoryResponse,
+  UploadDataResponse,
+  HealthResponse,
+} from '@/types/api';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
@@ -22,14 +35,14 @@ class ApiClient {
     minPrice?: number;
     maxPrice?: number;
     location?: string;
-  }) {
+  }): Promise<FeedsListResponse> {
     const response = await this.client.get('/api/feeds', { params });
-    return response.data;
+    return response.data as FeedsListResponse;
   }
 
-  async getFeed(id: string) {
+  async getFeed(id: string): Promise<FeedResponse> {
     const response = await this.client.get(`/api/feeds/${id}`);
-    return response.data;
+    return response.data as FeedResponse;
   }
 
   async createFeed(feedData: {
@@ -43,20 +56,20 @@ class ApiClient {
     isPremium?: boolean;
     updateFrequency?: number;
     initialData: any;
-  }) {
+  }): Promise<CreateFeedResponse> {
     const response = await this.client.post('/api/feeds', feedData);
-    return response.data;
+    return response.data as CreateFeedResponse;
   }
 
-  async updateFeedData(feedId: string, data: any, provider?: string) {
+  async updateFeedData(feedId: string, data: any, provider?: string): Promise<UpdateFeedDataResponse> {
     const response = await this.client.put(`/api/feeds/${feedId}/data`, {
       data,
       provider,
     });
-    return response.data;
+    return response.data as UpdateFeedDataResponse;
   }
 
-  async submitRating(feedId: string, stars: number, comment: string) {
+  async submitRating(feedId: string, stars: number, comment: string): Promise<any> {
     const response = await this.client.post(`/api/feeds/${feedId}/rating`, {
       stars,
       comment,
@@ -70,21 +83,21 @@ class ApiClient {
     consumer?: string;
     tier: number;
     paymentAmount: number;
-  }) {
+  }): Promise<SubscribeResponse> {
     const response = await this.client.post(`/api/subscribe/${feedId}`, params);
-    return response.data;
+    return response.data as SubscribeResponse;
   }
 
-  async getSubscription(subscriptionId: string) {
+  async getSubscription(subscriptionId: string): Promise<SubscriptionResponse> {
     const response = await this.client.get(`/api/subscriptions/${subscriptionId}`);
-    return response.data;
+    return response.data as SubscriptionResponse;
   }
 
-  async verifyAccess(subscriptionId: string, consumer: string) {
+  async verifyAccess(subscriptionId: string, consumer: string): Promise<VerifyAccessResponse> {
     const response = await this.client.post(`/api/subscriptions/${subscriptionId}/verify`, {
       consumer,
     });
-    return response.data;
+    return response.data as VerifyAccessResponse;
   }
 
   // =================== Data ===================
@@ -93,31 +106,31 @@ class ApiClient {
     subscriptionId?: string;
     consumer?: string;
     preview?: boolean;
-  }) {
+  }): Promise<DataResponse> {
     const response = await this.client.get(`/api/data/${feedId}`, { params });
-    return response.data;
+    return response.data as DataResponse;
   }
 
-  async getDataHistory(feedId: string, subscriptionId: string, consumer: string, limit?: number) {
+  async getDataHistory(feedId: string, subscriptionId: string, consumer: string, limit?: number): Promise<DataHistoryResponse> {
     const response = await this.client.get(`/api/data/${feedId}/history`, {
       params: { subscriptionId, consumer, limit },
     });
-    return response.data;
+    return response.data as DataHistoryResponse;
   }
 
-  async uploadData(data: any, encrypt?: boolean) {
+  async uploadData(data: any, encrypt?: boolean): Promise<UploadDataResponse> {
     const response = await this.client.post('/api/data/upload', {
       data,
       encrypt,
     });
-    return response.data;
+    return response.data as UploadDataResponse;
   }
 
   // =================== Health ===================
 
-  async healthCheck() {
+  async healthCheck(): Promise<HealthResponse> {
     const response = await this.client.get('/health');
-    return response.data;
+    return response.data as HealthResponse;
   }
 }
 
