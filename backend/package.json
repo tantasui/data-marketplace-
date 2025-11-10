@@ -7,14 +7,16 @@
     "dev": "nodemon --exec ts-node src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "test": "jest"
+    "test": "jest",
+    "gen:key": "ts-node src/scripts/generate-private-key.ts",
+    "gen:key:env": "ts-node src/scripts/generate-private-key.ts --write-env"
   },
   "keywords": ["iot", "blockchain", "sui", "walrus", "marketplace"],
   "author": "",
   "license": "MIT",
   "dependencies": {
     "@mysten/sui.js": "^0.54.1",
-    "@walrus-sdk/client": "^1.0.0",
+    "@mysten/sui": "^1.44.0",
     "axios": "^1.6.2",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",

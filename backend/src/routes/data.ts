@@ -38,7 +38,29 @@ router.get('/:feedId', async (req: Request, res: Response) => {
       let previewData = cache.get(cacheKey);
 
       if (!previewData) {
-        const fullData = await walrusService.retrieveData(feed.walrusBlobId);
+        let fullData: any = null;
+        try {
+          fullData = await walrusService.retrieveData(feed.walrusBlobId);
+        } catch (e: any) {
+          const msg = e?.message || String(e);
+          console.warn('[DataRoute] Walrus preview retrieval failed, returning placeholder sample:', msg);
+          // Graceful preview fallback when Walrus blob is missing or temporary 404
+          previewData = {
+            sample: 'Preview temporarily unavailable. Subscribe to access live data.',
+          };
+          cache.set(cacheKey, previewData);
+          return res.json({
+            success: true,
+            preview: true,
+            data: previewData,
+            feed: {
+              name: feed.name,
+              category: feed.category,
+              description: feed.description,
+              location: feed.location,
+            },
+          });
+        }
 
         // Return only a sample of the data for preview
         if (Array.isArray(fullData)) {

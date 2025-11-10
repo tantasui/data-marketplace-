@@ -46,8 +46,8 @@ export function useSuiWallet() {
     try {
       const tx = new TransactionBlock();
 
-      // Split coin for payment (convert SUI to MIST)
-      const [coin] = tx.splitCoins(tx.gas, [tx.pure.u64(paymentAmount * 1_000_000_000)]);
+      // Split coin for payment (paymentAmount expected in SUI -> convert to MIST)
+      const [coin] = tx.splitCoins(tx.gas, [tx.pure.u64(BigInt(Math.floor(paymentAmount * 1_000_000_000)))]);
 
       tx.moveCall({
         target: `${packageId}::subscription::subscribe_to_feed`,
@@ -61,18 +61,11 @@ export function useSuiWallet() {
       });
 
       const result = await signAndExecuteTransactionBlock({
-        transactionBlock: tx,
-        options: {
-          showEffects: true,
-          showObjectChanges: true,
-        },
+        transactionBlock: tx as any,
+        options: { showObjectChanges: true },
       });
 
-      // Extract subscription ID
-      const createdObjects = result.objectChanges?.filter(
-        (change: any) => change.type === 'created'
-      );
-
+      const createdObjects = result.objectChanges?.filter((change: any) => change.type === 'created');
       if (createdObjects && createdObjects.length > 0) {
         const subscriptionObject = createdObjects.find((obj: any) =>
           obj.objectType?.includes('Subscription')
@@ -126,27 +119,20 @@ export function useSuiWallet() {
           tx.pure.string(feedData.category),
           tx.pure.string(feedData.description),
           tx.pure.string(feedData.location),
-          tx.pure.u64(feedData.pricePerQuery),
-          tx.pure.u64(feedData.monthlySubscriptionPrice),
+          tx.pure.u64(BigInt(feedData.pricePerQuery)),
+          tx.pure.u64(BigInt(feedData.monthlySubscriptionPrice)),
           tx.pure.bool(feedData.isPremium),
           tx.pure.string(feedData.walrusBlobId),
-          tx.pure.u64(feedData.updateFrequency),
+          tx.pure.u64(BigInt(feedData.updateFrequency)),
         ],
       });
 
       const result = await signAndExecuteTransactionBlock({
-        transactionBlock: tx,
-        options: {
-          showEffects: true,
-          showObjectChanges: true,
-        },
+        transactionBlock: tx as any,
+        options: { showObjectChanges: true },
       });
 
-      // Extract feed ID
-      const createdObjects = result.objectChanges?.filter(
-        (change: any) => change.type === 'created'
-      );
-
+      const createdObjects = result.objectChanges?.filter((change: any) => change.type === 'created');
       if (createdObjects && createdObjects.length > 0) {
         const feedObject = createdObjects.find((obj: any) =>
           obj.objectType?.includes('DataFeed')
@@ -190,9 +176,7 @@ export function useSuiWallet() {
         ],
       });
 
-      const result = await signAndExecuteTransactionBlock({
-        transactionBlock: tx,
-      });
+      const result = await signAndExecuteTransactionBlock({ transactionBlock: tx as any, options: { showEffects: true } });
 
       setIsLoading(false);
       return result.effects?.status.status === 'success';
@@ -231,11 +215,8 @@ export function useSuiWallet() {
       });
 
       const result = await signAndExecuteTransactionBlock({
-        transactionBlock: tx,
-        options: {
-          showEffects: true,
-          showObjectChanges: true,
-        },
+        transactionBlock: tx as any,
+        options: { showEffects: true },
       });
 
       setIsLoading(false);

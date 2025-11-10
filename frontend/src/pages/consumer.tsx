@@ -2,12 +2,13 @@ import { useState, useEffect } from 'react';
 import Layout from '@/components/common/Layout';
 import { useSuiWallet } from '@/hooks/useSuiWallet';
 import apiClient from '@/lib/api';
+import type { DataFeed } from '@/types/api';
 
 export default function ConsumerMarketplace() {
   const { isConnected, address } = useSuiWallet();
-  const [feeds, setFeeds] = useState<any[]>([]);
-  const [filteredFeeds, setFilteredFeeds] = useState<any[]>([]);
-  const [selectedFeed, setSelectedFeed] = useState<any | null>(null);
+  const [feeds, setFeeds] = useState<DataFeed[]>([]);
+  const [filteredFeeds, setFilteredFeeds] = useState<DataFeed[]>([]);
+  const [selectedFeed, setSelectedFeed] = useState<DataFeed | null>(null);
   const [previewData, setPreviewData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -29,7 +30,11 @@ export default function ConsumerMarketplace() {
   const loadFeeds = async () => {
     try {
       const response = await apiClient.getAllFeeds();
-      setFeeds(response.data || []);
+      if (response && 'success' in response && response.success) {
+        setFeeds(response.data || []);
+      } else {
+        setFeeds([]);
+      }
     } catch (error) {
       console.error('Error loading feeds:', error);
     }
@@ -57,13 +62,32 @@ export default function ConsumerMarketplace() {
     setFilteredFeeds(filtered);
   };
 
-  const handlePreview = async (feed: any) => {
+  const handlePreview = async (feed: DataFeed) => {
     setSelectedFeed(feed);
     setIsLoading(true);
 
     try {
-      const response = await apiClient.getData(feed.id, { preview: true });
-      setPreviewData(response.data);
+      // Check if user has a subscription for this feed
+      const subscriptions = JSON.parse(localStorage.getItem('subscriptions') || '{}');
+      const subscriptionId = subscriptions[feed.id];
+
+      let response;
+      if (subscriptionId && isConnected && address) {
+        // Use subscription to get full data access
+        response = await apiClient.getData(feed.id, {
+          subscriptionId,
+          consumer: address,
+        });
+      } else {
+        // Use preview mode
+        response = await apiClient.getData(feed.id, { preview: true });
+      }
+
+      if (response && 'success' in response && response.success) {
+        setPreviewData(response.data);
+      } else {
+        setPreviewData(null);
+      }
     } catch (error) {
       console.error('Error loading preview:', error);
       setPreviewData(null);
@@ -72,7 +96,7 @@ export default function ConsumerMarketplace() {
     }
   };
 
-  const handleSubscribe = async (feed: any, tier: number) => {
+  const handleSubscribe = async (feed: DataFeed, tier: number) => {
     if (!isConnected || !address) {
       alert('Please connect your wallet first');
       return;
@@ -93,13 +117,16 @@ export default function ConsumerMarketplace() {
         tier,
         paymentAmount: price,
       });
-
-      if (response.success) {
+      if (response && 'success' in response && response.success) {
         alert(`Successfully subscribed! Subscription ID: ${response.data.subscriptionId}`);
-        // Store subscription ID in localStorage for demo
         const subscriptions = JSON.parse(localStorage.getItem('subscriptions') || '{}');
         subscriptions[feed.id] = response.data.subscriptionId;
         localStorage.setItem('subscriptions', JSON.stringify(subscriptions));
+        
+        // Refresh preview if this feed is currently selected
+        if (selectedFeed && selectedFeed.id === feed.id) {
+          await handlePreview(feed);
+        }
       }
     } catch (error: any) {
       console.error('Error subscribing:', error);

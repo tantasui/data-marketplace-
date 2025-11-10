@@ -2,10 +2,11 @@ import { useState, useEffect } from 'react';
 import Layout from '@/components/common/Layout';
 import { useSuiWallet } from '@/hooks/useSuiWallet';
 import apiClient from '@/lib/api';
+import type { DataFeed } from '@/types/api';
 
 export default function ProviderDashboard() {
   const { isConnected, address } = useSuiWallet();
-  const [feeds, setFeeds] = useState<any[]>([]);
+  const [feeds, setFeeds] = useState<DataFeed[]>([]);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -31,9 +32,13 @@ export default function ProviderDashboard() {
   const loadMyFeeds = async () => {
     try {
       const response = await apiClient.getAllFeeds();
-      // Filter feeds owned by current user
-      const myFeeds = response.data.filter((feed: any) => feed.provider === address);
-      setFeeds(myFeeds);
+      if (response && 'success' in response && response.success) {
+        const allFeeds = response.data || [];
+        const myFeeds = allFeeds.filter((feed: DataFeed) => feed.provider === address);
+        setFeeds(myFeeds);
+      } else {
+        setFeeds([]);
+      }
     } catch (error) {
       console.error('Error loading feeds:', error);
     }
@@ -44,6 +49,7 @@ export default function ProviderDashboard() {
     setIsLoading(true);
 
     try {
+      console.log('[Provider] handleSubmit start', { formData });
       // Parse initial data
       let parsedData;
       try {
@@ -51,8 +57,16 @@ export default function ProviderDashboard() {
       } catch {
         parsedData = formData.initialData;
       }
+      console.log('[Provider] Parsed initial data', { type: typeof parsedData });
 
       // Create feed
+      console.log('[Provider] Creating feed via API', {
+        name: formData.name,
+        category: formData.category,
+        location: formData.location,
+        isPremium: formData.isPremium,
+        updateFrequency: formData.updateFrequency,
+      });
       const response = await apiClient.createFeed({
         provider: address,
         name: formData.name,
@@ -65,8 +79,9 @@ export default function ProviderDashboard() {
         updateFrequency: formData.updateFrequency,
         initialData: parsedData,
       });
+      console.log('[Provider] CreateFeed response', response);
 
-      if (response.success) {
+      if (response && 'success' in response && response.success) {
         alert('Feed created successfully!');
         setShowCreateForm(false);
         loadMyFeeds();
@@ -84,10 +99,13 @@ export default function ProviderDashboard() {
         });
       }
     } catch (error: any) {
-      console.error('Error creating feed:', error);
+      const status = error?.response?.status;
+      const respData = error?.response?.data;
+      console.error('Error creating feed:', error?.message || error, { status, respData });
       alert(`Error: ${error.message}`);
     } finally {
       setIsLoading(false);
+      console.log('[Provider] handleSubmit end');
     }
   };
 
@@ -105,7 +123,7 @@ export default function ProviderDashboard() {
 
       const response = await apiClient.updateFeedData(feedId, parsedData, address);
 
-      if (response.success) {
+      if (response && 'success' in response && response.success) {
         alert('Data updated successfully!');
         loadMyFeeds();
       }
