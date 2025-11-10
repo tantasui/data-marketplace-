@@ -39,7 +39,7 @@ export class WalrusService {
 
       // Upload to Walrus
       const response = await axios.put(
-        `${this.publisherUrl}/v1/store?epochs=${this.epochs}`,
+        `${this.publisherUrl}/v1/blobs?epochs=${this.epochs}`,
         dataToUpload,
         {
           headers: {
