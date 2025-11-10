@@ -7,7 +7,9 @@
     "dev": "nodemon --exec ts-node src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "test": "jest"
+    "test": "jest",
+    "init-demo": "ts-node src/scripts/init-demo-feeds.ts",
+    "mock-device": "ts-node src/scripts/mock-iot-device.ts"
   },
   "keywords": ["iot", "blockchain", "sui", "walrus", "marketplace"],
   "author": "",
