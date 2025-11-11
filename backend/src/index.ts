@@ -17,7 +17,7 @@ import { optionalAuthenticateApiKey, AuthenticatedRequest } from './middleware/a
 dotenv.config();
 
 const app: Express = express();
-const port = process.env.PORT || 3001;
+const port = parseInt(process.env.PORT || '3001', 10);
 
 // Create HTTP server
 const server = createServer(app);
@@ -247,14 +247,17 @@ app.use((req: Request, res: Response) => {
 });
 
 // Start server
-server.listen(port, () => {
+// Listen on all interfaces (0.0.0.0) for WSL port forwarding to Wokwi
+server.listen(port, '0.0.0.0', () => {
   console.log(`
 ╔════════════════════════════════════════════════════════════╗
 ║  IoT Data Marketplace API Server                          ║
 ║  Version: 1.0.0                                           ║
 ╠════════════════════════════════════════════════════════════╣
-║  Server running on: http://localhost:${port}                ║
-║  WebSocket endpoint: ws://localhost:${port}/ws              ║
+║  Server running on: http://0.0.0.0:${port} (all interfaces) ║
+║  Local access: http://localhost:${port}                     ║
+║  Wokwi access: http://host.wokwi.internal:${port}           ║
+║  WebSocket endpoint: ws://localhost:${port}/ws               ║
 ║  Environment: ${process.env.NODE_ENV || 'development'}                              ║
 ╚════════════════════════════════════════════════════════════╝
   `);
