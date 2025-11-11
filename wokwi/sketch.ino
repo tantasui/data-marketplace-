@@ -14,9 +14,11 @@ DHT dht(DHTPIN, DHTTYPE);
 // ⚠️ UPDATE THESE VALUES ⚠️
 const char* ssid = "Wokwi-GUEST";
 const char* password = "";
-const char* serverUrl = "http://YOUR_NGROK_URL/api/iot/update";
-const char* feedId = "YOUR_FEED_ID";
-const char* providerAddress = "YOUR_WALLET_ADDRESS";
+// Use Wokwi Private IoT Gateway (requires port forwarding setup)
+// Replace YOUR_FEED_ID with your actual feed ID from provider dashboard
+const char* serverUrl = "http://host.wokwi.internal:3001/api/iot/feeds/0x2fca1ed29725e582fd31525e2e98523b735722f50ce846ed8528bdb8ce27caff/update";
+// Replace YOUR_PROVIDER_API_KEY with your pk_xxx API key from provider dashboard  
+const char* apiKey = "YOUR_PROVIDER_API_KEY"; // pk_xxx format
 
 // Configuration
 const unsigned long updateInterval = 300000; // 5 minutes (300000ms)
@@ -147,13 +149,12 @@ void sendDataToAPI(float temp, float humidity, float pressure, float windSpeed, 
   HTTPClient http;
   http.begin(serverUrl);
   http.addHeader("Content-Type", "application/json");
-  http.setTimeout(10000); // 10 second timeout
+  http.addHeader("X-API-Key", apiKey); // API key authentication
+  http.setTimeout(20000); // 20 second timeout
 
-  // Create JSON payload
+  // Create JSON payload (feed-specific endpoint format)
   StaticJsonDocument<1024> doc;
-  doc["feedId"] = feedId;
   doc["deviceId"] = deviceId;
-  doc["provider"] = providerAddress;
 
   JsonObject data = doc.createNestedObject("data");
   data["timestamp"] = millis();
