@@ -7,8 +7,11 @@ import feedsRouter from './routes/feeds';
 import subscriptionsRouter from './routes/subscriptions';
 import dataRouter from './routes/data';
 import iotRouter from './routes/iot';
+import apiKeysRouter from './routes/api-keys';
+import subscriberRouter from './routes/subscriber';
 import suiService from './services/sui.service';
 import walrusService from './services/walrus.service';
+import { optionalAuthenticateApiKey, AuthenticatedRequest } from './middleware/auth.middleware';
 
 // Load environment variables
 dotenv.config();
@@ -24,11 +27,22 @@ const wss = new WebSocketServer({ server, path: '/ws' });
 
 // Middleware
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
-  credentials: true
+  origin: '*', // Allow all origins for IoT devices and ngrok
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'ngrok-skip-browser-warning']
 }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Handle ngrok browser warning header
+app.use((req, res, next) => {
+  // Allow ngrok requests without browser warning
+  if (req.headers['ngrok-skip-browser-warning']) {
+    res.setHeader('ngrok-skip-browser-warning', 'true');
+  }
+  next();
+});
 
 // Request logging
 app.use((req, res, next) => {
@@ -42,6 +56,8 @@ app.use('/api/subscribe', subscriptionsRouter);
 app.use('/api/subscriptions', subscriptionsRouter);
 app.use('/api/data', dataRouter);
 app.use('/api/iot', iotRouter);
+app.use('/api/api-keys', apiKeysRouter);
+app.use('/api/subscriber', subscriberRouter);
 
 // Health check endpoint
 app.get('/health', (req: Request, res: Response) => {
@@ -72,12 +88,13 @@ interface WSClient {
   ws: WebSocket;
   feedId?: string;
   subscriptionId?: string;
+  apiKeyId?: string;
   isAlive: boolean;
 }
 
 const clients = new Set<WSClient>();
 
-wss.on('connection', (ws: WebSocket) => {
+wss.on('connection', (ws: WebSocket, req: any) => {
   console.log('New WebSocket connection');
 
   const client: WSClient = {
@@ -98,21 +115,46 @@ wss.on('connection', (ws: WebSocket) => {
 
       if (data.type === 'subscribe') {
         // Subscribe to a feed
-        const { feedId, subscriptionId, consumer } = data;
+        const { feedId, subscriptionId, consumer, apiKey } = data;
 
-        // Verify access
-        const hasAccess = await suiService.checkAccess(subscriptionId, consumer);
+        let hasAccess = false;
+        let apiKeyId: string | undefined;
+
+        // Try API key authentication first
+        if (apiKey) {
+          const apiKeyService = (await import('./services/api-key.service')).default;
+          const validation = await apiKeyService.validateApiKey(apiKey);
+          
+          if (validation.valid && validation.apiKey && validation.apiKey.type === 'SUBSCRIBER') {
+            if (validation.apiKey.subscriptionId) {
+              const subscription = await suiService.getSubscription(validation.apiKey.subscriptionId);
+              if (subscription && subscription.feedId === feedId) {
+                hasAccess = await suiService.checkAccess(
+                  validation.apiKey.subscriptionId,
+                  validation.apiKey.consumerAddress || ''
+                );
+                apiKeyId = validation.apiKey.id;
+              }
+            }
+          }
+        }
+
+        // Fallback to legacy authentication
+        if (!hasAccess && subscriptionId && consumer) {
+          hasAccess = await suiService.checkAccess(subscriptionId, consumer);
+        }
 
         if (!hasAccess) {
           ws.send(JSON.stringify({
             type: 'error',
-            error: 'Access denied. Invalid or expired subscription.'
+            error: 'Access denied. Provide valid API key or subscription credentials.'
           }));
           return;
         }
 
         client.feedId = feedId;
         client.subscriptionId = subscriptionId;
+        client.apiKeyId = apiKeyId;
 
         ws.send(JSON.stringify({
           type: 'subscribed',
@@ -133,6 +175,7 @@ wss.on('connection', (ws: WebSocket) => {
       } else if (data.type === 'unsubscribe') {
         client.feedId = undefined;
         client.subscriptionId = undefined;
+        client.apiKeyId = undefined;
 
         ws.send(JSON.stringify({
           type: 'unsubscribed'

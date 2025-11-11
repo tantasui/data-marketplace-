@@ -1,4 +1,6 @@
-import { ReactNode } from 'react';
+'use client';
+
+import { ReactNode, useState } from 'react';
 import Link from 'next/link';
 import { ConnectButton } from '@mysten/dapp-kit';
 
@@ -7,6 +9,8 @@ interface LayoutProps {
 }
 
 export default function Layout({ children }: LayoutProps) {
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
       {/* Navigation */}
@@ -23,7 +27,7 @@ export default function Layout({ children }: LayoutProps) {
               </span>
             </Link>
 
-            {/* Navigation Links */}
+            {/* Desktop Navigation Links */}
             <div className="hidden md:flex items-center space-x-8">
               <Link
                 href="/"
@@ -38,6 +42,12 @@ export default function Layout({ children }: LayoutProps) {
                 Marketplace
               </Link>
               <Link
+                href="/subscriber"
+                className="text-gray-700 hover:text-blue-600 font-medium transition-colors"
+              >
+                My Subscriptions
+              </Link>
+              <Link
                 href="/provider"
                 className="text-gray-700 hover:text-blue-600 font-medium transition-colors"
               >
@@ -45,11 +55,71 @@ export default function Layout({ children }: LayoutProps) {
               </Link>
             </div>
 
-            {/* Wallet Connect */}
-            <div className="flex items-center">
-              <ConnectButton />
+            {/* Right side: Wallet Connect + Mobile Menu Button */}
+            <div className="flex items-center gap-4">
+              {/* Wallet Connect - Hidden on very small screens, shown on sm+ */}
+              <div className="hidden sm:flex items-center">
+                <ConnectButton />
+              </div>
+
+              {/* Mobile Menu Button */}
+              <button
+                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                className="md:hidden p-2 rounded-lg text-gray-700 hover:text-blue-600 hover:bg-gray-100 transition-colors"
+                aria-label="Toggle mobile menu"
+              >
+                {mobileMenuOpen ? (
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                ) : (
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                  </svg>
+                )}
+              </button>
             </div>
           </div>
+
+          {/* Mobile Menu */}
+          {mobileMenuOpen && (
+            <div className="md:hidden border-t border-gray-200 py-4">
+              <div className="flex flex-col space-y-4">
+                <Link
+                  href="/"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="text-gray-700 hover:text-blue-600 font-medium transition-colors px-2 py-1"
+                >
+                  Home
+                </Link>
+                <Link
+                  href="/consumer"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="text-gray-700 hover:text-blue-600 font-medium transition-colors px-2 py-1"
+                >
+                  Marketplace
+                </Link>
+                <Link
+                  href="/subscriber"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="text-gray-700 hover:text-blue-600 font-medium transition-colors px-2 py-1"
+                >
+                  My Subscriptions
+                </Link>
+                <Link
+                  href="/provider"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="text-gray-700 hover:text-blue-600 font-medium transition-colors px-2 py-1"
+                >
+                  Provider Dashboard
+                </Link>
+                {/* Wallet Connect for Mobile */}
+                <div className="sm:hidden pt-2 border-t border-gray-200">
+                  <ConnectButton />
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </nav>
 

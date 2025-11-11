@@ -49,10 +49,36 @@ export type SubscriptionResponse = ApiSuccess<Subscription> | ApiError;
 export type VerifyAccessResponse = ApiSuccess<{ hasAccess: boolean; subscriptionId: string }> | ApiError;
 export type DataResponse = ApiSuccess<any> & { feed?: { id: string; name: string; category: string; lastUpdated: number } } | ApiError;
 export type DataHistoryResponse = ApiSuccess<Array<{ timestamp: number; data: any }>> & { count: number } | ApiError;
-export type UploadDataResponse = ApiSuccess<{ blobId: string }> | ApiError;
-export interface HealthResponse {
-  success: boolean;
-  status: string;
-  timestamp: string;
-  version: string;
+export interface ApiKey {
+  id: string;
+  keyPrefix: string; // pk_ or sk_
+  type: 'PROVIDER' | 'SUBSCRIBER';
+  feedId?: string;
+  subscriptionId?: string;
+  providerAddress?: string;
+  consumerAddress?: string;
+  name?: string;
+  description?: string;
+  createdAt: string;
+  expiresAt?: string;
+  revokedAt?: string;
+  lastUsedAt?: string;
+  usageCount: number;
+  rateLimit?: number;
 }
+
+export interface CreateApiKeyResponse {
+  success: true;
+  data: {
+    id: string;
+    key: string; // Full key - only shown once!
+    keyPrefix: string;
+    type: 'PROVIDER' | 'SUBSCRIBER';
+    createdAt: string;
+    expiresAt?: string;
+  };
+}
+
+export type ApiKeysListResponse = ApiSuccess<ApiKey[]> | ApiError;
+export type ApiKeyResponse = ApiSuccess<ApiKey> | ApiError;
+export type CreateApiKeyResponseType = CreateApiKeyResponse | ApiError;

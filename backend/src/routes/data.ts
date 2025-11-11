@@ -1,19 +1,31 @@
 import { Router, Request, Response } from 'express';
 import walrusService from '../services/walrus.service';
 import suiService from '../services/sui.service';
+import { optionalAuthenticateApiKey, AuthenticatedRequest } from '../middleware/auth.middleware';
+import { usageLoggingMiddleware } from '../middleware/auth.middleware';
+import prisma from '../services/prisma.service';
 import NodeCache from 'node-cache';
 
 const router = Router();
 const cache = new NodeCache({ stdTTL: parseInt(process.env.CACHE_TTL || '300') });
 
+// Apply optional API key auth and usage logging to all data routes
+router.use(optionalAuthenticateApiKey);
+router.use(usageLoggingMiddleware);
+
 /**
  * GET /api/data/:feedId
- * Retrieve data from a feed (requires valid subscription)
+ * Retrieve data from a feed
+ * Supports:
+ * 1. API key authentication (preferred)
+ * 2. Legacy subscriptionId + consumer (backward compatible)
+ * 3. Preview mode (no auth required)
  */
-router.get('/:feedId', async (req: Request, res: Response) => {
+router.get('/:feedId', async (req: Request | AuthenticatedRequest, res: Response) => {
   try {
     const { feedId } = req.params;
     const { subscriptionId, consumer, preview } = req.query;
+    const authReq = req as AuthenticatedRequest;
 
     // Get feed details
     const feed = await suiService.getDataFeed(feedId);
@@ -32,7 +44,7 @@ router.get('/:feedId', async (req: Request, res: Response) => {
       });
     }
 
-    // If preview mode, return limited data
+    // If preview mode, return limited data (no auth required)
     if (preview === 'true') {
       const cacheKey = `preview_${feedId}`;
       let previewData = cache.get(cacheKey);
@@ -44,7 +56,6 @@ router.get('/:feedId', async (req: Request, res: Response) => {
         } catch (e: any) {
           const msg = e?.message || String(e);
           console.warn('[DataRoute] Walrus preview retrieval failed, returning placeholder sample:', msg);
-          // Graceful preview fallback when Walrus blob is missing or temporary 404
           previewData = {
             sample: 'Preview temporarily unavailable. Subscribe to access live data.',
           };
@@ -87,23 +98,38 @@ router.get('/:feedId', async (req: Request, res: Response) => {
       });
     }
 
-    // Verify subscription access
-    if (!subscriptionId || !consumer) {
-      return res.status(401).json({
-        success: false,
-        error: 'Subscription ID and consumer address required'
-      });
+    // Check authentication: API key (preferred) or legacy subscription
+    let hasAccess = false;
+    let apiKeyId: string | undefined;
+
+    // Try API key authentication first
+    if (authReq.apiKey && authReq.apiKeyType === 'SUBSCRIBER') {
+      // Verify API key has access to this feed
+      if (authReq.apiKey.subscriptionId) {
+        // Verify subscription is for this feed
+        const subscription = await suiService.getSubscription(authReq.apiKey.subscriptionId);
+        if (subscription && subscription.feedId === feedId) {
+          hasAccess = await suiService.checkAccess(
+            authReq.apiKey.subscriptionId,
+            authReq.apiKey.consumerAddress || ''
+          );
+          apiKeyId = authReq.apiKey.id;
+        }
+      }
     }
 
-    const hasAccess = await suiService.checkAccess(
-      subscriptionId as string,
-      consumer as string
-    );
+    // Fallback to legacy authentication
+    if (!hasAccess && subscriptionId && consumer) {
+      hasAccess = await suiService.checkAccess(
+        subscriptionId as string,
+        consumer as string
+      );
+    }
 
     if (!hasAccess) {
       return res.status(403).json({
         success: false,
-        error: 'Access denied. Invalid or expired subscription.'
+        error: 'Access denied. Provide valid API key or subscription credentials.'
       });
     }
 
@@ -114,8 +140,6 @@ router.get('/:feedId', async (req: Request, res: Response) => {
     if (!data) {
       // Retrieve data from Walrus
       if (feed.isPremium) {
-        // For premium feeds, we need decryption key
-        // In production, this would come from Seal encryption
         const decryptionKey = req.headers['x-decryption-key'] as string;
         data = await walrusService.retrieveData(feed.walrusBlobId, decryptionKey);
       } else {
@@ -152,53 +176,101 @@ router.get('/:feedId', async (req: Request, res: Response) => {
 
 /**
  * GET /api/data/:feedId/history
- * Get historical data for a feed
+ * Get historical data for a feed (from DataHistory index)
+ * Supports API key auth or legacy subscription auth
  */
-router.get('/:feedId/history', async (req: Request, res: Response) => {
+router.get('/:feedId/history', async (req: Request | AuthenticatedRequest, res: Response) => {
   try {
     const { feedId } = req.params;
-    const { subscriptionId, consumer, limit } = req.query;
+    const { subscriptionId, consumer, limit = '100', startDate, endDate } = req.query;
+    const authReq = req as AuthenticatedRequest;
 
-    // Verify subscription access
-    if (!subscriptionId || !consumer) {
-      return res.status(401).json({
-        success: false,
-        error: 'Subscription ID and consumer address required'
-      });
+    // Verify access (same logic as main data endpoint)
+    let hasAccess = false;
+    if (authReq.apiKey && authReq.apiKeyType === 'SUBSCRIBER') {
+      if (authReq.apiKey.subscriptionId) {
+        const subscription = await suiService.getSubscription(authReq.apiKey.subscriptionId);
+        if (subscription && subscription.feedId === feedId) {
+          hasAccess = await suiService.checkAccess(
+            authReq.apiKey.subscriptionId,
+            authReq.apiKey.consumerAddress || ''
+          );
+        }
+      }
     }
 
-    const hasAccess = await suiService.checkAccess(
-      subscriptionId as string,
-      consumer as string
-    );
+    if (!hasAccess && subscriptionId && consumer) {
+      hasAccess = await suiService.checkAccess(
+        subscriptionId as string,
+        consumer as string
+      );
+    }
 
     if (!hasAccess) {
       return res.status(403).json({
         success: false,
-        error: 'Access denied. Invalid or expired subscription.'
+        error: 'Access denied. Provide valid API key or subscription credentials.'
       });
     }
 
-    // In a real implementation, you would query historical blob IDs
-    // For now, return the current data as a single history point
-    const feed = await suiService.getDataFeed(feedId);
-
-    if (!feed) {
-      return res.status(404).json({
-        success: false,
-        error: 'Feed not found'
-      });
+    // Query DataHistory for this feed
+    const limitNum = Math.min(parseInt(limit as string) || 100, 1000); // Max 1000 records
+    
+    const where: any = { feedId };
+    if (startDate || endDate) {
+      where.timestamp = {};
+      if (startDate) where.timestamp.gte = new Date(startDate as string);
+      if (endDate) where.timestamp.lte = new Date(endDate as string);
     }
 
-    const currentData = await walrusService.retrieveData(feed.walrusBlobId);
+    const historyRecords = await prisma.dataHistory.findMany({
+      where,
+      orderBy: { timestamp: 'desc' },
+      take: limitNum,
+      select: {
+        id: true,
+        blobId: true,
+        timestamp: true,
+        uploadedAt: true,
+        dataSummary: true,
+        dataSize: true,
+        deviceId: true,
+      },
+    });
+
+    // Fetch actual data from Walrus for each blob
+    const historyData = await Promise.all(
+      historyRecords.map(async (record) => {
+        try {
+          const data = await walrusService.retrieveData(record.blobId);
+          return {
+            timestamp: record.timestamp,
+            uploadedAt: record.uploadedAt,
+            data,
+            summary: record.dataSummary,
+            size: record.dataSize,
+            deviceId: record.deviceId,
+          };
+        } catch (error) {
+          // If blob retrieval fails, return summary only
+          return {
+            timestamp: record.timestamp,
+            uploadedAt: record.uploadedAt,
+            data: null,
+            summary: record.dataSummary,
+            size: record.dataSize,
+            deviceId: record.deviceId,
+            error: 'Failed to retrieve blob data',
+          };
+        }
+      })
+    );
 
     res.json({
       success: true,
-      data: [{
-        timestamp: feed.lastUpdated,
-        data: currentData
-      }],
-      count: 1
+      data: historyData,
+      count: historyData.length,
+      feedId,
     });
   } catch (error: any) {
     console.error('Error retrieving history:', error);

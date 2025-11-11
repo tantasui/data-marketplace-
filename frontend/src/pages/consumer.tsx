@@ -146,7 +146,7 @@ export default function ConsumerMarketplace() {
         <h2 className="text-lg font-bold mb-4">Filters</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
-            <label className="block text-sm font-medium mb-2">Category</label>
+            <label className="block text-sm font-medium mb-2 text-gray-700">Category</label>
             <select
               className="input"
               value={filters.category}
@@ -165,7 +165,7 @@ export default function ConsumerMarketplace() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-2">Type</label>
+            <label className="block text-sm font-medium mb-2 text-gray-700">Type</label>
             <select
               className="input"
               value={filters.isPremium}
@@ -178,7 +178,7 @@ export default function ConsumerMarketplace() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-2">Location</label>
+            <label className="block text-sm font-medium mb-2 text-gray-700">Location</label>
             <input
               type="text"
               className="input"
@@ -264,9 +264,12 @@ export default function ConsumerMarketplace() {
 
       {/* Preview Modal */}
       {selectedFeed && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[80vh] overflow-y-auto">
-            <div className="p-6">
+        <div className="modal-backdrop" onClick={() => {
+          setSelectedFeed(null);
+          setPreviewData(null);
+        }}>
+          <div className="modal max-w-2xl w-full" onClick={(e) => e.stopPropagation()}>
+            <div className="p-8">
               <div className="flex justify-between items-start mb-4">
                 <div>
                   <h2 className="text-2xl font-bold mb-2">{selectedFeed.name}</h2>
@@ -277,7 +280,8 @@ export default function ConsumerMarketplace() {
                     setSelectedFeed(null);
                     setPreviewData(null);
                   }}
-                  className="text-gray-500 hover:text-gray-700"
+                  className="text-gray-400 hover:text-gray-600 transition-colors p-1 hover:bg-gray-100 rounded-full"
+                  aria-label="Close modal"
                 >
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

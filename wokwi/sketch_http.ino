@@ -14,8 +14,8 @@ DHT dht(DHTPIN, DHTTYPE);
 // ⚠️ UPDATE THESE VALUES ⚠️
 const char* ssid = "Wokwi-GUEST";
 const char* password = "";
-// Use host.wokwi.internal to connect to your local backend via Private Gateway
-const char* serverUrl = "http://host.wokwi.internal:3001/api/iot/update";
+// Use HTTP instead of HTTPS for Wokwi compatibility
+const char* serverUrl = "http://unlugged-janise-universally.ngrok-free.dev/api/iot/update";
 const char* feedId = "0x2fca1ed29725e582fd31525e2e98523b735722f50ce846ed8528bdb8ce27caff";
 const char* providerAddress = "0xe7b5873257c12797d22f21fe8a4f81270d21c2678b94d89432df05e3c2f97ed8";
 
@@ -148,12 +148,13 @@ void sendDataToAPI(float temp, float humidity, float pressure, float windSpeed, 
   WiFiClient client;
   HTTPClient http;
   
-  Serial.println("📡 Connecting to local backend via Private Gateway...");
+  Serial.println("📡 Connecting to API...");
   Serial.println("   URL: " + String(serverUrl));
   
-  // Use regular WiFiClient for HTTP (Private Gateway handles the connection)
+  // Use HTTP (not HTTPS) for Wokwi compatibility
   http.begin(client, serverUrl);
   http.addHeader("Content-Type", "application/json");
+  http.addHeader("ngrok-skip-browser-warning", "true");
   http.setTimeout(20000); // 20 second timeout
   
   Serial.println("✅ HTTP client initialized");
@@ -180,7 +181,6 @@ void sendDataToAPI(float temp, float humidity, float pressure, float windSpeed, 
   serializeJson(doc, jsonString);
 
   Serial.println("📤 Sending to API...");
-  Serial.println("   URL: " + String(serverUrl));
   Serial.printf("   Payload size: %d bytes\n", jsonString.length());
   Serial.println("   WiFi Status: " + String(WiFi.status()));
   Serial.println("   RSSI: " + String(WiFi.RSSI()) + " dBm");
@@ -227,3 +227,6 @@ void blinkLED(int pin, int times) {
     delay(100);
   }
 }
+
+
+
