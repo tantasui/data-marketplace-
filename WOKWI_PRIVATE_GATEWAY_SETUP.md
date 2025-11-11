@@ -88,9 +88,3 @@ void sendDataToAPI(...) {
 - Check gateway output for connection messages
 - Verify backend logs show incoming requests
 - Try accessing `http://localhost:3001/api/iot/status` from browser
-
-const char* ssid = "Wokwi-GUEST";
-const char* password = "";
-const char* serverUrl = "https://unlugged-janise-universally.ngrok-free.dev/api/iot/update";
-const char* feedId = "0x2fca1ed29725e582fd31525e2e98523b735722f50ce846ed8528bdb8ce27caff";
-const char* providerAddress = "0xe7b5873257c12797d22f21fe8a4f81270d21c2678b94d89432df05e3c2f97ed8";

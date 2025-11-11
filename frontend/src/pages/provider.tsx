@@ -2,12 +2,14 @@ import { useState, useEffect } from 'react';
 import Layout from '@/components/common/Layout';
 import { useSuiWallet } from '@/hooks/useSuiWallet';
 import apiClient from '@/lib/api';
+import ApiKeyManager from '@/components/provider/ApiKeyManager';
 import type { DataFeed } from '@/types/api';
 
 export default function ProviderDashboard() {
   const { isConnected, address } = useSuiWallet();
   const [feeds, setFeeds] = useState<DataFeed[]>([]);
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [selectedFeed, setSelectedFeed] = useState<DataFeed | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   // Form state
@@ -169,18 +171,19 @@ export default function ProviderDashboard() {
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium mb-2">Feed Name</label>
+                  <label className="block text-sm font-medium mb-2 text-gray-700">Feed Name</label>
                   <input
                     type="text"
                     className="input"
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    placeholder="Enter feed name"
                     required
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-2">Category</label>
+                  <label className="block text-sm font-medium mb-2 text-gray-700">Category</label>
                   <select
                     className="input"
                     value={formData.category}
@@ -198,7 +201,7 @@ export default function ProviderDashboard() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-2">Location</label>
+                  <label className="block text-sm font-medium mb-2 text-gray-700">Location</label>
                   <input
                     type="text"
                     className="input"
@@ -210,18 +213,19 @@ export default function ProviderDashboard() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-2">Update Frequency (seconds)</label>
+                  <label className="block text-sm font-medium mb-2 text-gray-700">Update Frequency (seconds)</label>
                   <input
                     type="number"
                     className="input"
                     value={formData.updateFrequency}
                     onChange={(e) => setFormData({ ...formData, updateFrequency: parseInt(e.target.value) })}
                     min="1"
+                    placeholder="300"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-2">Price per Query (SUI)</label>
+                  <label className="block text-sm font-medium mb-2 text-gray-700">Price per Query (SUI)</label>
                   <input
                     type="number"
                     step="0.001"
@@ -229,11 +233,12 @@ export default function ProviderDashboard() {
                     value={formData.pricePerQuery}
                     onChange={(e) => setFormData({ ...formData, pricePerQuery: parseFloat(e.target.value) })}
                     min="0"
+                    placeholder="0.001"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-2">Monthly Subscription (SUI)</label>
+                  <label className="block text-sm font-medium mb-2 text-gray-700">Monthly Subscription (SUI)</label>
                   <input
                     type="number"
                     step="0.01"
@@ -241,23 +246,25 @@ export default function ProviderDashboard() {
                     value={formData.monthlySubscriptionPrice}
                     onChange={(e) => setFormData({ ...formData, monthlySubscriptionPrice: parseFloat(e.target.value) })}
                     min="0"
+                    placeholder="0.1"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-2">Description</label>
+                <label className="block text-sm font-medium mb-2 text-gray-700">Description</label>
                 <textarea
                   className="input"
                   rows={3}
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  placeholder="Describe your data feed..."
                   required
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-2">Initial Data (JSON)</label>
+                <label className="block text-sm font-medium mb-2 text-gray-700">Initial Data (JSON)</label>
                 <textarea
                   className="input font-mono text-sm"
                   rows={6}
@@ -348,18 +355,125 @@ export default function ProviderDashboard() {
                     </div>
                   </div>
 
-                  <button
-                    onClick={() => handleUpdateData(feed.id)}
-                    className="btn-primary w-full text-sm"
-                  >
-                    Update Data
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleUpdateData(feed.id)}
+                      className="btn-primary flex-1 text-sm"
+                    >
+                      Update Data
+                    </button>
+                    <button
+                      onClick={() => setSelectedFeed(feed)}
+                      className="btn-secondary flex-1 text-sm"
+                    >
+                      Manage
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
           )}
         </div>
       </div>
+
+      {/* Feed Details Modal */}
+      {selectedFeed && (
+        <div className="modal-backdrop" onClick={() => setSelectedFeed(null)}>
+          <div className="modal max-w-4xl w-full" onClick={(e) => e.stopPropagation()}>
+            <div className="p-8">
+              <div className="flex justify-between items-start mb-6">
+                <div>
+                  <h2 className="text-2xl font-bold mb-2">{selectedFeed.name}</h2>
+                  <p className="text-gray-600">{selectedFeed.description}</p>
+                </div>
+                <button
+                  onClick={() => setSelectedFeed(null)}
+                  className="text-gray-400 hover:text-gray-600 transition-colors p-1 hover:bg-gray-100 rounded-full"
+                  aria-label="Close modal"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-6 mb-6">
+                <div>
+                  <h3 className="font-bold mb-4">Feed Details</h3>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Feed ID:</span>
+                      <code className="font-mono text-xs text-gray-900 bg-gray-100 px-2 py-1 rounded break-all">{selectedFeed.id}</code>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Category:</span>
+                      <span className="font-medium text-gray-900 capitalize">{selectedFeed.category.replace('_', ' ')}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Location:</span>
+                      <span className="font-medium text-gray-900">{selectedFeed.location}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Update Frequency:</span>
+                      <span className="font-medium text-gray-900">Every {selectedFeed.updateFrequency}s</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Subscribers:</span>
+                      <span className="font-medium text-gray-900">{selectedFeed.totalSubscribers}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Total Revenue:</span>
+                      <span className="font-medium text-green-600">
+                        {(selectedFeed.totalRevenue / 1_000_000_000).toFixed(4)} SUI
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="font-bold mb-4">IoT Device Endpoint</h3>
+                  <div className="bg-gray-50 p-3 rounded mb-3">
+                    <p className="text-xs text-gray-600 mb-1">Use this endpoint in your IoT device:</p>
+                    <code className="text-xs font-mono break-all text-gray-900 bg-white px-2 py-1 rounded block">
+                      {process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/iot/feeds/{selectedFeed.id}/update
+                    </code>
+                  </div>
+                  <p className="text-xs text-gray-600 mb-3">
+                    Include your API key in the <code className="bg-gray-100 px-1 rounded text-gray-900">X-API-Key</code> header
+                  </p>
+                </div>
+              </div>
+
+              {/* API Key Management */}
+              <div className="mb-6">
+                <ApiKeyManager
+                  feedId={selectedFeed.id}
+                  providerAddress={address!}
+                  onKeyCreated={() => {
+                    // Refresh feed data if needed
+                  }}
+                />
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-4">
+                <button
+                  onClick={() => handleUpdateData(selectedFeed.id)}
+                  className="btn-primary flex-1"
+                >
+                  Update Data
+                </button>
+                <button
+                  onClick={() => setSelectedFeed(null)}
+                  className="btn-secondary flex-1"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </Layout>
   );
 }

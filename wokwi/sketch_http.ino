@@ -14,21 +14,15 @@ DHT dht(DHTPIN, DHTTYPE);
 // ⚠️ UPDATE THESE VALUES ⚠️
 const char* ssid = "Wokwi-GUEST";
 const char* password = "";
-// Use Wokwi Private IoT Gateway (requires port forwarding setup)
-// Replace YOUR_FEED_ID with your actual feed ID from provider dashboard
+// Use HTTP instead of HTTPS for Wokwi compatibility
+const char* serverUrl = "http://unlugged-janise-universally.ngrok-free.dev/api/iot/update";
 const char* feedId = "0x2fca1ed29725e582fd31525e2e98523b735722f50ce846ed8528bdb8ce27caff";
-// Replace YOUR_PROVIDER_API_KEY with your pk_xxx API key from provider dashboard
-const char* apiKey = "YOUR_PROVIDER_API_KEY"; // pk_xxx format
+const char* providerAddress = "0xe7b5873257c12797d22f21fe8a4f81270d21c2678b94d89432df05e3c2f97ed8";
 
 // Configuration
 const unsigned long updateInterval = 300000; // 5 minutes (300000ms)
 const char* deviceId = "wokwi-esp32-001";
 const char* location = "Wokwi Simulation Lab";
-
-// Build the feed-specific endpoint URL
-String getServerUrl() {
-  return "http://host.wokwi.internal:3001/api/iot/feeds/" + String(feedId) + "/update";
-}
 
 unsigned long lastUpdate = 0;
 int readingCount = 0;
@@ -151,42 +145,26 @@ void sendDataToAPI(float temp, float humidity, float pressure, float windSpeed, 
     return;
   }
 
-  // Check if API key is configured
-  if (strcmp(apiKey, "YOUR_PROVIDER_API_KEY") == 0) {
-    Serial.println("❌ API Key not configured!");
-    Serial.println("   Please update the apiKey variable with your pk_xxx key from provider dashboard");
-    blinkLED(LED_RED, 3);
-    return;
-  }
-
-  // Validate API key format (must start with pk_ for provider keys)
-  if (strncmp(apiKey, "pk_", 3) != 0) {
-    Serial.println("❌ Invalid API Key format!");
-    Serial.println("   Provider API key must start with 'pk_' (not 'sk_')");
-    Serial.println("   Get your provider key from: Provider Dashboard > Your Feed > API Keys");
-    blinkLED(LED_RED, 3);
-    return;
-  }
-
   WiFiClient client;
   HTTPClient http;
   
-  String serverUrl = getServerUrl();
-  Serial.println("📡 Connecting to local backend via Private Gateway...");
-  Serial.println("   URL: " + serverUrl);
+  Serial.println("📡 Connecting to API...");
+  Serial.println("   URL: " + String(serverUrl));
   
-  // Use regular WiFiClient for HTTP (Private Gateway handles the connection)
+  // Use HTTP (not HTTPS) for Wokwi compatibility
   http.begin(client, serverUrl);
   http.addHeader("Content-Type", "application/json");
-  http.addHeader("X-API-Key", apiKey); // API key authentication
+  http.addHeader("ngrok-skip-browser-warning", "true");
   http.setTimeout(20000); // 20 second timeout
   
   Serial.println("✅ HTTP client initialized");
 
-  // Create JSON payload (feed-specific endpoint format)
+  // Create JSON payload
   StaticJsonDocument<1024> doc;
-  doc["deviceId"] = deviceId; // Now part of the payload
-  
+  doc["feedId"] = feedId;
+  doc["deviceId"] = deviceId;
+  doc["provider"] = providerAddress;
+
   JsonObject data = doc.createNestedObject("data");
   data["timestamp"] = millis();
   data["temperature"] = round(temp * 10) / 10.0;
@@ -203,7 +181,6 @@ void sendDataToAPI(float temp, float humidity, float pressure, float windSpeed, 
   serializeJson(doc, jsonString);
 
   Serial.println("📤 Sending to API...");
-  Serial.println("   URL: " + serverUrl);
   Serial.printf("   Payload size: %d bytes\n", jsonString.length());
   Serial.println("   WiFi Status: " + String(WiFi.status()));
   Serial.println("   RSSI: " + String(WiFi.RSSI()) + " dBm");
@@ -250,3 +227,6 @@ void blinkLED(int pin, int times) {
     delay(100);
   }
 }
+
+
+

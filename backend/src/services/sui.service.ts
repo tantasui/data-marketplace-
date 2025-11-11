@@ -377,6 +377,124 @@ export class SuiService {
   }
 
   /**
+   * Get all subscriptions for a consumer address
+   * Tries multiple methods:
+   * 1. Query owned objects (if subscriptions are owned)
+   * 2. Query events (SubscriptionCreated events)
+   * 3. Query by object ID if we have subscription IDs stored elsewhere
+   */
+  async getSubscriptionsByConsumer(consumerAddress: string): Promise<Subscription[]> {
+    try {
+      console.log(`[SuiService] Fetching subscriptions for consumer: ${consumerAddress}`);
+      console.log(`[SuiService] Package ID: ${this.packageId}`);
+      
+      const subscriptions: Subscription[] = [];
+      const subscriptionIds = new Set<string>();
+      
+      // Method 1: Try querying owned objects
+      try {
+        const structType = `${this.packageId}::data_marketplace::Subscription`;
+        console.log(`[SuiService] Method 1: Querying owned objects with struct type: ${structType}`);
+        
+        const objects = await this.client.getOwnedObjects({
+          owner: consumerAddress,
+          filter: {
+            StructType: structType,
+          },
+          options: {
+            showContent: true,
+          },
+        });
+
+        console.log(`[SuiService] Found ${objects.data.length} owned objects`);
+
+        for (const obj of objects.data) {
+          if (obj.data && obj.data.content && 'fields' in obj.data.content) {
+            const fields = obj.data.content.fields as any;
+            
+            if (fields.consumer === consumerAddress && obj.data.objectId) {
+              subscriptionIds.add(obj.data.objectId);
+              subscriptions.push({
+                id: obj.data.objectId,
+                consumer: fields.consumer,
+                feedId: fields.feed_id,
+                tier: parseInt(fields.tier),
+                startEpoch: parseInt(fields.start_epoch),
+                expiryEpoch: parseInt(fields.expiry_epoch),
+                paymentAmount: parseInt(fields.payment_amount),
+                queriesUsed: parseInt(fields.queries_used),
+                isActive: fields.is_active,
+              });
+            }
+          }
+        }
+      } catch (error: any) {
+        console.warn(`[SuiService] Method 1 failed:`, error.message);
+      }
+
+      // Method 2: Query events for SubscriptionCreated
+      try {
+        const eventType = `${this.packageId}::subscription::SubscriptionCreated`;
+        console.log(`[SuiService] Method 2: Querying events with type: ${eventType}`);
+        
+        const events = await this.client.queryEvents({
+          query: {
+            MoveEventType: eventType,
+          },
+          limit: 100,
+        });
+
+        console.log(`[SuiService] Found ${events.data.length} subscription events`);
+
+        for (const event of events.data) {
+          if (event.parsedJson) {
+            const parsed = event.parsedJson as any;
+            const subConsumer = parsed.consumer;
+            const subId = parsed.subscription_id || event.id?.txDigest;
+            
+            if (subConsumer === consumerAddress && subId && !subscriptionIds.has(subId)) {
+              subscriptionIds.add(subId);
+              
+              // Fetch the actual subscription object to get full details
+              try {
+                const subscription = await this.getSubscription(subId);
+                if (subscription && subscription.consumer === consumerAddress) {
+                  subscriptions.push(subscription);
+                }
+              } catch (err) {
+                console.warn(`[SuiService] Failed to fetch subscription ${subId}:`, err);
+                // If we can't fetch the object, create a minimal subscription from event data
+                if (parsed.feed_id) {
+                  subscriptions.push({
+                    id: subId,
+                    consumer: subConsumer,
+                    feedId: parsed.feed_id,
+                    tier: parsed.tier || 0,
+                    startEpoch: parsed.start_epoch || 0,
+                    expiryEpoch: parsed.expiry_epoch || 0,
+                    paymentAmount: parsed.payment_amount || 0,
+                    queriesUsed: parsed.queries_used || 0,
+                    isActive: parsed.is_active !== false,
+                  });
+                }
+              }
+            }
+          }
+        }
+      } catch (error: any) {
+        console.warn(`[SuiService] Method 2 failed:`, error.message);
+      }
+
+      console.log(`[SuiService] Returning ${subscriptions.length} subscriptions`);
+      return subscriptions;
+    } catch (error: any) {
+      console.error(`[SuiService] Error getting subscriptions for ${consumerAddress}:`, error.message);
+      console.error(`[SuiService] Error stack:`, error.stack);
+      return [];
+    }
+  }
+
+  /**
    * Get all data feeds (paginated)
    */
   async getAllDataFeeds(limit: number = 50): Promise<DataFeed[]> {
