@@ -6,6 +6,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import feedsRouter from './routes/feeds';
 import subscriptionsRouter from './routes/subscriptions';
 import dataRouter from './routes/data';
+import iotRouter from './routes/iot';
 import suiService from './services/sui.service';
 import walrusService from './services/walrus.service';
 
@@ -40,6 +41,7 @@ app.use('/api/feeds', feedsRouter);
 app.use('/api/subscribe', subscriptionsRouter);
 app.use('/api/subscriptions', subscriptionsRouter);
 app.use('/api/data', dataRouter);
+app.use('/api/iot', iotRouter);
 
 // Health check endpoint
 app.get('/health', (req: Request, res: Response) => {
